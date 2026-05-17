@@ -9,42 +9,7 @@ app.use(express.json());
 
 /*
 =====================================
-TEST API
-=====================================
-*/
-
-app.get("/", (req, res) => {
-
-  res.send("Backend Running");
-
-});
-
-/*
-=====================================
-READ CUSTOMERS
-=====================================
-*/
-
-app.get("/customers", async (req, res) => {
-
-  try {
-
-    const result = await pool.query(
-      "SELECT * FROM customers ORDER BY customer_id ASC"
-    );
-
-    res.json(result.rows);
-
-  } catch (error) {
-
-    console.log(error);
-
-  }
-});
-
-/*
-=====================================
-READ ROOMS
+GET ROOMS
 =====================================
 */
 
@@ -53,7 +18,10 @@ app.get("/rooms", async (req, res) => {
   try {
 
     const result = await pool.query(
-      "SELECT * FROM rooms ORDER BY room_id ASC"
+      `
+      SELECT * FROM rooms
+      ORDER BY room_id ASC
+      `
     );
 
     res.json(result.rows);
@@ -62,12 +30,17 @@ app.get("/rooms", async (req, res) => {
 
     console.log(error);
 
+    res.status(500).json({
+      message: "Error rooms"
+    });
+
   }
+
 });
 
 /*
 =====================================
-READ BOOKINGS
+GET BOOKINGS
 =====================================
 */
 
@@ -75,75 +48,28 @@ app.get("/bookings", async (req, res) => {
 
   try {
 
-    const result = await pool.query(`
-      SELECT
-        bookings.booking_id,
-        customers.name AS customer_name,
-        rooms.room_number,
-        bookings.check_in,
-        bookings.check_out,
-        bookings.total_price
-      FROM bookings
-      JOIN customers
-      ON bookings.customer_id = customers.customer_id
-      JOIN rooms
-      ON bookings.room_id = rooms.room_id
-      ORDER BY bookings.booking_id ASC
-    `);
-
-    res.json(result.rows);
-
-  } catch (error) {
-
-    console.log(error);
-
-  }
-});
-
-/*
-=====================================
-READ PAYMENTS
-=====================================
-*/
-
-app.get("/payments", async (req, res) => {
-
-  try {
-
-    const result = await pool.query(`
-      SELECT
-        payments.payment_id,
-        payments.payment_date,
-        payments.amount,
-        payments.payment_method,
-        bookings.booking_id
-      FROM payments
-      JOIN bookings
-      ON payments.booking_id = bookings.booking_id
-      ORDER BY payments.payment_id ASC
-    `);
-
-    res.json(result.rows);
-
-  } catch (error) {
-
-    console.log(error);
-
-  }
-});
-
-/*
-=====================================
-READ STAFF
-=====================================
-*/
-
-app.get("/staff", async (req, res) => {
-
-  try {
-
     const result = await pool.query(
-      "SELECT * FROM staff ORDER BY staff_id ASC"
+      `
+      SELECT
+      bookings.booking_id,
+      customers.name AS customer_name,
+      rooms.room_number,
+      bookings.check_in,
+      bookings.check_out,
+      bookings.total_price
+
+      FROM bookings
+
+      JOIN customers
+      ON bookings.customer_id =
+      customers.customer_id
+
+      JOIN rooms
+      ON bookings.room_id =
+      rooms.room_id
+
+      ORDER BY bookings.booking_id ASC
+      `
     );
 
     res.json(result.rows);
@@ -152,12 +78,17 @@ app.get("/staff", async (req, res) => {
 
     console.log(error);
 
+    res.status(500).json({
+      message: "Error bookings"
+    });
+
   }
+
 });
 
 /*
 =====================================
-CREATE CUSTOMER
+ADD CUSTOMER
 =====================================
 */
 
@@ -172,127 +103,118 @@ app.post("/customers", async (req, res) => {
       address
     } = req.body;
 
-    await pool.query(
+    const result = await pool.query(
       `
       INSERT INTO customers
       (name,email,phone,address)
+
       VALUES($1,$2,$3,$4)
+
+      RETURNING *
       `,
-      [name, email, phone, address]
+      [
+        name,
+        email,
+        phone,
+        address
+      ]
     );
 
-    res.json({
-      message: "Customer Added"
-    });
+    res.json(result.rows[0]);
 
   } catch (error) {
 
     console.log(error);
 
+    res.status(500).json({
+      message: "Error add customer"
+    });
+
   }
+
 });
 
 /*
 =====================================
-UPDATE CUSTOMER
+ADD BOOKING
 =====================================
 */
 
-app.put("/customers/:id", async (req, res) => {
+app.post("/bookings", async (req, res) => {
 
   try {
 
-    const id = req.params.id;
-
     const {
-      name,
-      email,
-      phone,
-      address
+      customer_id,
+      room_id,
+      check_in,
+      check_out,
+      total_price
     } = req.body;
 
     await pool.query(
       `
-      UPDATE customers
-      SET
-      name=$1,
-      email=$2,
-      phone=$3,
-      address=$4
-      WHERE customer_id=$5
+      INSERT INTO bookings
+      (
+        customer_id,
+        room_id,
+        check_in,
+        check_out,
+        total_price
+      )
+
+      VALUES($1,$2,$3,$4,$5)
       `,
-      [name, email, phone, address, id]
+      [
+        customer_id,
+        room_id,
+        check_in,
+        check_out,
+        total_price
+      ]
     );
 
-    res.json({
-      message: "Customer Updated"
-    });
-
-  } catch (error) {
-
-    console.log(error);
-
-  }
-});
-
-/*
-=====================================
-DELETE CUSTOMER
-=====================================
-*/
-
-app.delete("/customers/:id", async (req, res) => {
-
-  try {
-
-    const id = req.params.id;
+    /*
+    =====================================
+    UPDATE ROOM STATUS
+    =====================================
+    */
 
     await pool.query(
       `
-      DELETE FROM customers
-      WHERE customer_id=$1
+      UPDATE rooms
+      SET status='Booked'
+      WHERE room_id=$1
       `,
-      [id]
+      [room_id]
     );
 
     res.json({
-      message: "Customer Deleted"
+      message: "Booking berhasil"
     });
 
   } catch (error) {
 
     console.log(error);
 
+    res.status(500).json({
+      message: "Error booking"
+    });
+
   }
+
 });
 
 /*
 =====================================
-DATABASE CONNECTION
-=====================================
-*/
-
-pool.connect((err) => {
-
-  if (err) {
-
-    console.log("Database Error", err);
-
-  } else {
-
-    console.log("Database Connected");
-
-  }
-});
-
-/*
-=====================================
-RUN SERVER
+SERVER
 =====================================
 */
 
 app.listen(5000, () => {
 
-  console.log("Server running on port 5000");
+  console.log(
+    "Server running on port 5000"
+  );
 
 });

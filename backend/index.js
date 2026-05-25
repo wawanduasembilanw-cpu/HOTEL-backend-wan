@@ -1,6 +1,13 @@
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
+
 const pool = require("./db");
+
+const {
+  authenticateToken,
+  SECRET_KEY
+} = require("./middleware");
 
 const app = express();
 
@@ -9,29 +16,79 @@ app.use(express.json());
 
 /*
 =====================================
-GET ROOMS
+LOGIN
 =====================================
 */
 
-app.get("/rooms", async (req, res) => {
+app.post("/login", async (req, res) => {
 
   try {
 
+    const {
+      username,
+      password
+    } = req.body;
+
     const result = await pool.query(
       `
-      SELECT * FROM rooms
-      ORDER BY room_id ASC
-      `
+      SELECT * FROM users
+      WHERE username=$1
+      `,
+      [username]
     );
 
-    res.json(result.rows);
+    if (result.rows.length === 0) {
+
+      return res.status(401).json({
+        message: "Username salah"
+      });
+
+    }
+
+    const user = result.rows[0];
+
+    if (user.password !== password) {
+
+      return res.status(401).json({
+        message: "Password salah"
+      });
+
+    }
+
+    /*
+    =====================================
+    GENERATE TOKEN
+    =====================================
+    */
+
+    const token = jwt.sign(
+
+      {
+        username: user.username
+      },
+
+      SECRET_KEY,
+
+      {
+        expiresIn: "1d"
+      }
+
+    );
+
+    res.json({
+
+      message: "Login berhasil",
+
+      token: token
+
+    });
 
   } catch (error) {
 
     console.log(error);
 
     res.status(500).json({
-      message: "Error rooms"
+      message: "Server error"
     });
 
   }
@@ -40,51 +97,86 @@ app.get("/rooms", async (req, res) => {
 
 /*
 =====================================
-GET BOOKINGS
+ROOMS
 =====================================
 */
 
-app.get("/bookings", async (req, res) => {
+app.get(
+  "/rooms",
 
-  try {
+  authenticateToken,
 
-    const result = await pool.query(
-      `
-      SELECT
-      bookings.booking_id,
-      customers.name AS customer_name,
-      rooms.room_number,
-      bookings.check_in,
-      bookings.check_out,
-      bookings.total_price
+  async (req, res) => {
 
-      FROM bookings
+    try {
 
-      JOIN customers
-      ON bookings.customer_id =
-      customers.customer_id
+      const result = await pool.query(
+        `
+        SELECT * FROM rooms
+        ORDER BY room_id ASC
+        `
+      );
 
-      JOIN rooms
-      ON bookings.room_id =
-      rooms.room_id
+      res.json(result.rows);
 
-      ORDER BY bookings.booking_id ASC
-      `
-    );
+    } catch (error) {
 
-    res.json(result.rows);
+      console.log(error);
 
-  } catch (error) {
-
-    console.log(error);
-
-    res.status(500).json({
-      message: "Error bookings"
-    });
+    }
 
   }
+);
 
-});
+/*
+=====================================
+BOOKINGS
+=====================================
+*/
+
+app.get(
+  "/bookings",
+
+  authenticateToken,
+
+  async (req, res) => {
+
+    try {
+
+      const result = await pool.query(
+        `
+        SELECT
+        bookings.booking_id,
+        customers.name AS customer_name,
+        rooms.room_number,
+        bookings.check_in,
+        bookings.check_out,
+        bookings.total_price
+
+        FROM bookings
+
+        JOIN customers
+        ON bookings.customer_id =
+        customers.customer_id
+
+        JOIN rooms
+        ON bookings.room_id =
+        rooms.room_id
+
+        ORDER BY bookings.booking_id ASC
+        `
+      );
+
+      res.json(result.rows);
+
+    } catch (error) {
+
+      console.log(error);
+
+    }
+
+  }
+);
 
 /*
 =====================================
@@ -92,47 +184,54 @@ ADD CUSTOMER
 =====================================
 */
 
-app.post("/customers", async (req, res) => {
+app.post(
+  "/customers",
 
-  try {
+  authenticateToken,
 
-    const {
-      name,
-      email,
-      phone,
-      address
-    } = req.body;
+  async (req, res) => {
 
-    const result = await pool.query(
-      `
-      INSERT INTO customers
-      (name,email,phone,address)
+    try {
 
-      VALUES($1,$2,$3,$4)
-
-      RETURNING *
-      `,
-      [
+      const {
         name,
         email,
         phone,
         address
-      ]
-    );
+      } = req.body;
 
-    res.json(result.rows[0]);
+      const result = await pool.query(
+        `
+        INSERT INTO customers
+        (
+          name,
+          email,
+          phone,
+          address
+        )
 
-  } catch (error) {
+        VALUES($1,$2,$3,$4)
 
-    console.log(error);
+        RETURNING *
+        `,
+        [
+          name,
+          email,
+          phone,
+          address
+        ]
+      );
 
-    res.status(500).json({
-      message: "Error add customer"
-    });
+      res.json(result.rows[0]);
+
+    } catch (error) {
+
+      console.log(error);
+
+    }
 
   }
-
-});
+);
 
 /*
 =====================================
@@ -140,76 +239,72 @@ ADD BOOKING
 =====================================
 */
 
-app.post("/bookings", async (req, res) => {
+app.post(
+  "/bookings",
 
-  try {
+  authenticateToken,
 
-    const {
-      customer_id,
-      room_id,
-      check_in,
-      check_out,
-      total_price
-    } = req.body;
+  async (req, res) => {
 
-    await pool.query(
-      `
-      INSERT INTO bookings
-      (
+    try {
+
+      const {
         customer_id,
         room_id,
         check_in,
         check_out,
         total_price
-      )
+      } = req.body;
 
-      VALUES($1,$2,$3,$4,$5)
-      `,
-      [
-        customer_id,
-        room_id,
-        check_in,
-        check_out,
-        total_price
-      ]
-    );
+      await pool.query(
+        `
+        INSERT INTO bookings
+        (
+          customer_id,
+          room_id,
+          check_in,
+          check_out,
+          total_price
+        )
 
-    /*
-    =====================================
-    UPDATE ROOM STATUS
-    =====================================
-    */
+        VALUES($1,$2,$3,$4,$5)
+        `,
+        [
+          customer_id,
+          room_id,
+          check_in,
+          check_out,
+          total_price
+        ]
+      );
 
-    await pool.query(
-      `
-      UPDATE rooms
-      SET status='Booked'
-      WHERE room_id=$1
-      `,
-      [room_id]
-    );
+      /*
+      =====================================
+      UPDATE ROOM STATUS
+      =====================================
+      */
 
-    res.json({
-      message: "Booking berhasil"
-    });
+      await pool.query(
+        `
+        UPDATE rooms
+        SET status='Booked'
+        WHERE room_id=$1
+        `,
+        [room_id]
+      );
 
-  } catch (error) {
+      res.json({
+        message: "Booking berhasil"
+      });
 
-    console.log(error);
+    } catch (error) {
 
-    res.status(500).json({
-      message: "Error booking"
-    });
+      console.log(error);
+
+    }
 
   }
-
-});
-
-/*
-=====================================
-SERVER
-=====================================
-*/
+);
 
 app.listen(5000, () => {
 
